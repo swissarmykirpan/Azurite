@@ -6,6 +6,7 @@ import path from 'path';
 import xml2js from 'xml2js';
 import * as BbPromise from 'bluebird';
 import fsextra from 'fs-extra';
+import * as azureStorage from "azure-storage";
 
 const fs = BbPromise.promisifyAll(fsextra);
 const should = chai.should(), expect = chai.expect;
@@ -19,6 +20,7 @@ const appendBlobName = 'testappendblob';
 const pageBlobName = 'testpageblob';
 const url = `http://localhost:10000`;
 const urlPath = `/devstoreaccount1`;
+const blobService = azureStorage.createBlobService("UseDevelopmentStorage=true");
 
 
 function createBlob(containerNamex, blobNamex, payload, blobType) {
@@ -52,48 +54,11 @@ describe('Blob HTTP API', () => {
         return azurite.init({ l: location, silent: 'true', overwrite: 'true' })
             .then(() => {
                 // Make sure there is an existing container 'testcontainer'
-                const optionsContainer = {
-                    method: 'PUT',
-                    uri: `http://localhost:10000/devstoreaccount1/${containerName}?restype=container`,
-                    body: ''
-                };
-                const optionsBlockBlob = {
-                    method: 'PUT',
-                    headers: {
-                        'x-ms-blob-type': 'BlockBlob',
-                        'Content-Type': 'application/octet-stream'
-                    },
-                    uri: `http://localhost:10000/devstoreaccount1/${containerName}/${blockBlobName}`,
-                    body: 'abc123'
-                }
-                const optionsAppendBlob = {
-                    method: 'PUT',
-                    headers: {
-                        'x-ms-blob-type': 'AppendBlob',
-                        'Content-Type': 'application/octet-stream'
-                    },
-                    uri: `http://localhost:10000/devstoreaccount1/${containerName}/${appendBlobName}`,
-                    body: ''
-                }
-                const optionsPageBlob = {
-                    method: 'PUT',
-                    headers: {
-                        'x-ms-blob-type': 'PageBlob',
-                        'Content-Type': 'application/octet-stream'
-                    },
-                    uri: `http://localhost:10000/devstoreaccount1/${containerName}/${pageBlobName}`,
-                    body: ''
-                }
-                return rp(optionsContainer)
-                    .then(() => {
-                        return rp(optionsBlockBlob);
-                    })
-                    .then(() => {
-                        return rp(optionsAppendBlob);
-                    })
-                    .then(() => {
-                        return rp(optionsPageBlob);
-                    });
+                blobService.createContainerIfNotExists(containerName, function(error, result, response) {
+                    blobService.createPageBlob(containerName, pageBlobName, 1024, function(error) {});
+                    blobService.createBlockBlobFromText(containerName, blockBlobName, 'abc123', null, function(error) {});   
+                    blobService.createAppendBlobFromText(containerName, appendBlobName, '', null, function(error) {});   
+                });
             });
     });
 
@@ -102,35 +67,25 @@ describe('Blob HTTP API', () => {
     });
 
     describe('PUT Block Blob', () => {
-        it('should fail to create a block due to missing container', () => {
-            return chai.request(url)
-                .put(`${urlPath}/DOESNOTEXISTS/blob`)
-                .set('x-ms-blob-type', 'BlockBlob')
-                .set('Content-Type', 'application/octet-stream')
-                .send('THIS IS CONTENT')
-                .catch((e) => {
-                    e.should.have.status(404);
-                })
+        it('should fail to create a block due to missing container', (done) => {
+            blobService.createBlockBlobFromText('doesnotexist', 'blockblob', 'THISISCONTENT', null, function(error) {
+                expect(error.name).to.equal('StorageError');
+                done();
+            });
         });
-        it('should fail to create a block due to wrong or unsupported blob type', () => {
-            return chai.request(url)
-                .put(`${urlPath}/${containerName}/blob`)
-                .set('x-ms-blob-type', 'NOTSUPPORTED')
-                .set('Content-Type', 'application/octet-stream')
-                .send('THIS IS CONTENT')
-                .catch((e) => {
-                    e.should.have.status(400);
+
+        it('should create a simple block blob without meta headers', (done) => {
+            const blobName = 'testblobblock';
+            const content = 'THISISCONTENT';
+            blobService.createBlockBlobFromText(containerName, blobName, content, { contentSettings: { contentType: 'application/octet-stream' }}, function(error) {
+                expect(error).to.equal(null);
+                blobService.getBlobToText(containerName, blobName, function(error, content, result) {
+                    expect(error).to.equal(null);
+                    expect(content).to.equal(content);
                 });
-        });
-        it('should create a simple block blob without meta headers', () => {
-            return chai.request(url)
-                .put(`${urlPath}/${containerName}/blob`)
-                .set('x-ms-blob-type', 'BlockBlob')
-                .set('Content-Type', 'application/octet-stream')
-                .send('abcdefghijklmn')
-                .then((res) => {
-                    res.should.have.status(201);
-                });
+
+                done();
+            });
         });
     });
 

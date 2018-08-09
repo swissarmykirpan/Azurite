@@ -4,11 +4,15 @@
         "allowJs": true,
         "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,
+        "lib": [
+            "es2015"
+        ]
     },
     "exclude": [
         "node_modules"
     ],
     "include": [
-        "**/*.js"
+        "**/*.js",
+        "**/*.ts"
     ]
 }
